@@ -2,13 +2,13 @@
 This repository showcases an Exploratory Data Analysis (EDA) project using R focused on understanding the relationship between diet type, exercise habits, and health metrics such as BMI.
 
 🗂 Repository Contents
-📄 Rakshitha_Ramachandra_K00302101.docx
+📄 Report.docx
 Final report detailing the EDA process, data cleaning, feature engineering, visualizations, and insights.
 
-🧾 Rakshitha_Ramachandra_K00302101.qmd
+🧾 Exploratory_data.qmd
 Quarto file containing the complete R code used for cleaning, analysis, and visualization—generated using RStudio.
 
-📊 data (2).xlsx
+📊 Dataset.csv
 Dataset used for the analysis. It contains demographic, diet, and exercise-related attributes.
 
 🔍 Project Highlights
