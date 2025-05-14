@@ -1,0 +1,527 @@
+---
+title: "Interpretation Of R"
+author: "Rakshitha Ramachandra K00302101"
+format: docx
+editor: visual
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(
+    echo = FALSE,
+    message = FALSE,
+    warning = FALSE,
+    fig.align = "center")
+```
+
+## Problem Statement
+
+This project studies the relationship between diet and exercise and demographic information of age, weight, height, and gender in terms of their effect on health metrics such as BMI and activity levels. Through this process of addressing inconsistencies, handling missing data, and feature engineering relevant features, it will shed light on insightful insights and patterns that may drive improvement in health and wellness outcomes.
+
+## Solution Summary
+
+1.  Data Cleaning and feature engineering : Diet type and exercise type were normalized by standardizing values, removing inconsistencies, and ensuring readability. Missing values in exercise frequency, weight, and height were imputed using contextual rules, including 0.0 for "No Exercise" and age group-based means for height and weight. The calculation of BMI and its categorization into "Low," "Medium," and "High" using percentiles was implemented to address skewness and enable meaningful comparisons. Additionally, diet types were grouped into "Plant-Based" and "Non-Plant-Based" categories to simplify analysis and highlight dietary trends.
+
+2.  Exploratory Visualization : Extensive visualizations were conducted on the dataset to identify insightful patterns and relationships. Key columns such as type of diet, type of exercise, and BMI were visualized using bar charts, pie charts, and scatterplots. New columns were engineered, including the calculation of BMI and BMI percentile categories for deeper insights into health and activity trends. Data cleaning and imputation were performed to ensure consistency and accuracy for in-depth explorations into demographics, diet preferences, exercise habits, and their interrelations. These visualizations provided valuable perspectives on the dataset structure and key health metrics.
+
+3.  Conclusions highlighting the insights you have gained : Exploratory visualizations provided extensive insight into the dataset, showing the interaction between diet and exercise with variations in BMI, considering demographic factors. Conclusion Insights derived from these analyses are outlined herein-present meaningful patterns and trends that address recommendations for action.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+library(tidyverse)
+library(scales)
+library(skimr)
+```
+
+```{r}
+#Loading Dataset
+DemographicHealthDataset <- read.csv("00_data/data (1).csv")
+```
+
+## Data Cleaning
+
+The diet_type column was cleaned to normalize the values to ensure consistency with the removal of special characters, trimming of extra spaces, and converting into title case. Normalization in data means regularizing it in a standard format to make them ready for analysis.
+
+```{r}
+# Clean the 'diet_type' column in DemographicHealthDataset
+DemographicHealthDataset <- DemographicHealthDataset %>%
+    mutate(diet_type = str_replace_all(diet_type, "omnivore ", "Omnivore")) %>%
+    mutate(diet_type = str_replace_all(diet_type, "keto", "Keto")) %>%
+     mutate(diet_type = str_replace_all(diet_type, "[^a-zA-Z]", "")) %>%  # Remove all non-alphabetic characters
+    mutate(diet_type = str_replace_all(diet_type, "paleo", "Paleo")) %>%
+    mutate(diet_type = str_replace_all(diet_type, "vegetarian", "Vegetarian")) %>%
+    mutate(diet_type = str_replace_all(diet_type, "vegan", "Vegan")) %>%
+    mutate(diet_type = str_replace_all(diet_type, "[[:punct:]]", "")) %>% # Remove special characters
+    mutate(diet_type = str_trim(diet_type, side = "both")) %>% # Trim leading and trailing spaces
+    mutate(diet_type = str_trim(diet_type, side = "both"))# Trim any leading/trailing spaces
+
+# View the unique values after cleaning
+DemographicHealthDataset %>% select(diet_type) %>% distinct()
+```
+
+The gender column was standardized to ensure consistency by converting all values to title case and mapping variations like "M" and "Male" to "Male" and "F" and "Female" to "Female." Additionally, unexpected or missing values were replaced with "Unknown." This standardization ensures uniformity in the dataset, making it ready for accurate analysis.
+
+```{r}
+# Standardize the 'gender' column in DemographicHealthDataset
+DemographicHealthDataset <- DemographicHealthDataset %>%
+    mutate(gender = str_to_title(gender)) %>%  # Convert to title case (e.g., "male" -> "Male")
+    mutate(gender = case_when(
+        gender %in% c("Male", "M") ~ "Male",    # Map variations of "Male" to "Male"
+        gender %in% c("Female", "F") ~ "Female", # Map variations of "Female" to "Female"
+        TRUE ~ "Unknown"                        # Handle any other or missing values
+    ))
+
+# View unique values in the gender column after standardization
+DemographicHealthDataset %>% select(gender) %>% distinct()
+```
+
+The exercise_type column was cleaned-replacing "None" with "No Exercise" for readability, removing extra spaces, and standardizing text to title case for consistency and better interpretability of the values.
+
+```{r}
+# Clean the 'exercise_type' column in DemographicHealthDataset
+DemographicHealthDataset <- DemographicHealthDataset %>%
+    mutate(exercise_type = str_replace_all(exercise_type, "None", "No Exercise")) %>%  # Replace "None" with "No Exercise"
+    mutate(exercise_type = str_trim(exercise_type, side = "both")) %>%                # Trim leading and trailing spaces
+    mutate(exercise_type = str_to_title(exercise_type))                              # Capitalize first letter of each word
+
+# View the unique values after cleaning
+DemographicHealthDataset %>% select(exercise_type) %>% distinct()
+```
+
+The exercise_frequency column was cleaned, replacing NA with 0.0 when the exercise type is "No Exercise" and with the column median for other NA values. This makes the column consistent without any missing data and thus ready for analysis.
+
+```{r}
+# Clean the 'exercise_frequency' column in DemographicHealthDataset
+DemographicHealthDataset <- DemographicHealthDataset %>%
+    mutate(exercise_frequency = case_when(
+        is.na(exercise_frequency) & exercise_type == "No Exercise" ~ 0.0,  # Replace NA with 0.0 for "No Exercise"
+        is.na(exercise_frequency) ~ median(exercise_frequency, na.rm = TRUE), # Replace remaining NA with median
+        TRUE ~ exercise_frequency   # Retain existing values
+    ))
+
+# View the unique values after cleaning
+DemographicHealthDataset %>% select(exercise_frequency) %>% distinct()
+```
+
+#### Feature Engineering: Age Grouping and Categorizing
+
+The missing values in the weight and height columns were imputed using the mean values calculated within each age_group. This group-based approach ensures that the replacements are contextually accurate, reflecting the typical weight and height for individuals in similar age ranges. This method improves data quality while maintaining meaningful variability.
+
+```{r}
+# Group individuals into age categories
+DemographicHealthDataset <- DemographicHealthDataset %>%
+    mutate(age_group = case_when(
+        age >= 0 & age <= 17 ~ "minor",   # Ages 0-17 classified as "minor"
+        age >= 18 & age <= 30 ~ "young",  # Ages 18-30 classified as "young"
+        age >= 31 & age <= 60 ~ "adult",  # Ages 31-60 classified as "adult"
+        age >= 61 ~ "senior_citizen",     # Ages 61 and above classified as "senior_citizen"
+        TRUE ~ "unknown"                  # Any other cases (e.g., missing or invalid ages) classified as "unknown"
+    ))
+
+# Replace NA in 'weight' and 'height' with group-based means (by age_group)
+DemographicHealthDataset <- DemographicHealthDataset %>%
+    group_by(age_group) %>%
+    mutate(weight = ifelse(is.na(weight), mean(weight, na.rm = TRUE), weight)) %>%
+    mutate(height = ifelse(is.na(height), mean(height, na.rm = TRUE), height)) %>%
+    ungroup()
+
+# View summary of the updated columns
+DemographicHealthDataset %>% select(weight, height) %>% summary()
+```
+
+#### Feature Engineering: BMI Calculation and Adjustments
+
+We used a percentile-based categorization of BMI to handle the skewness in the data, since the majority of the persons had a classification of "Overweight." We divided BMI into "Low," "Medium," and "High" categories based on the 33rd and 66th percentiles, which gave us balanced groups. This step will enhance analysis by providing meaningful comparisons between the different BMI groups, as well as uncovering patterns in diet, exercise, and demographics.
+
+```{r}
+#calculate BMI
+DemographicHealthDataset <- DemographicHealthDataset %>%
+    mutate(BMI = weight / ((height / 100) ^ 2))
+
+# Calculate percentiles for BMI
+low_bmi_threshold <- quantile(DemographicHealthDataset$BMI, 0.33, na.rm = TRUE)
+medium_bmi_threshold <- quantile(DemographicHealthDataset$BMI, 0.66, na.rm = TRUE)
+
+# Categorize BMI based on percentiles
+DemographicHealthDataset <- DemographicHealthDataset %>%
+    mutate(BMI_percentile_category = case_when(
+        BMI <= low_bmi_threshold ~ "Low BMI",
+        BMI > low_bmi_threshold & BMI <= medium_bmi_threshold ~ "Medium BMI",
+        BMI > medium_bmi_threshold ~ "High BMI"
+    ))
+
+# View the distribution of BMI categories
+table(DemographicHealthDataset$BMI_percentile_category)
+```
+
+#### Feature Engineering: Diet Category
+
+We simplified the diets into two categories: "Plant-Based" and "Non-Plant-Based." For comparison clarity and to showcase dietary trends, "Plant-Based" will consist of Vegan and Vegetarian diets, while "Non-Plant-Based" includes Omnivore, Keto, and Paleo diets. This way, comparisons between these diet types and health metrics, exercise, and demographics would make more sense.
+
+```{r}
+# Add a new column categorizing diets into Plant-Based and Non-Plant-Based
+DemographicHealthDataset <- DemographicHealthDataset %>%
+  mutate(diet_category = case_when(
+    diet_type %in% c("Vegan", "Vegetarian") ~ "Plant-Based",
+    diet_type %in% c("Omnivore", "Keto", "Paleo") ~ "Non-Plant-Based",
+    TRUE ~ "Unknown" # Handle unexpected or missing values
+  ))
+
+# View the distinct values in the new diet_category column
+DemographicHealthDataset %>% select(diet_type, diet_category) %>% distinct()
+```
+
+## Exploratory visualizations
+
+### Distribution of Diet Types in the Dataset
+
+This pie chart shows the proportion of people following each diet type. Vegan is the most popular diet type at 20.4%, while Paleo is the least popular, with only 19.1% of people following it.
+
+```{r fig.height=6, fig.width=8}
+# Count the number of occurrences of each diet type
+temp_diet_type <- DemographicHealthDataset %>%
+  count(diet_type)
+
+# Calculate percentage for each diet type
+temp_diet_type <- temp_diet_type %>%
+  mutate(perc = paste0(round(temp_diet_type$n / sum(temp_diet_type$n) * 100, 2), "%"))
+
+# Plotting the histogram with percentages
+diet_histogram <- ggplot(temp_diet_type, aes(x = diet_type, y = n, fill = diet_type)) +
+  geom_bar(stat = "identity", show.legend = FALSE) +  # Creating bars for the diet types
+  geom_text(aes(label = perc), vjust = -0.5, color = "black") +  # Adding percentage labels above the bars
+  scale_fill_manual(values = c("skyblue", "lightgreen", "orange", "lightcoral", "pink")) +  # Colors for diet types
+  ggtitle("Distribution of Diet Type with Percentages") +
+  xlab("Diet Type") +
+  ylab("Count") +
+  theme_minimal()
+diet_histogram
+```
+
+### Distribution of Excercise in the dataset
+
+This pie illustrates how, out of all kinds, yoga is represented by 21.8%, followed closely by cardio at 21.1%, and in that order comes Pilates by 19%, Strength by 18.1%, and No Exercise by 20%. In this representation, it is somewhat equitably divided, though yoga and cardio are most preferred activities.
+
+```{r}
+# Count the number of occurrences of each exercise type
+temp_exercise_type <- DemographicHealthDataset %>%
+  count(exercise_type)
+
+# Calculate percentage for each exercise type
+temp_exercise_type <- temp_exercise_type %>%
+  mutate(perc = paste0(temp_exercise_type$exercise_type, "\n", 
+                      round(temp_exercise_type$n / sum(temp_exercise_type$n) * 100, 2), "%"))
+
+# Plotting the pie chart for exercise type distribution
+exercise_pie_chart <- ggplot(temp_exercise_type, aes(x = "", y = n, fill = exercise_type)) +
+  geom_bar(stat = "identity", width = 1) +  # Bar chart for pie sections
+  coord_polar(theta = "y") +  # Converts the bar chart into a pie chart
+  geom_text(aes(label = perc), position = position_stack(vjust = 0.5), color = "white") +  # Add percentage labels
+  scale_fill_manual(values = c("indianred", "yellow", "orange", "brown", "pink")) +  # Colors for exercise types
+  ggtitle("Distribution of Exercise Type") +
+  theme_void()  # Clean theme for pie chart
+
+# Display the pie chart
+exercise_pie_chart
+```
+
+### Most Popular Diet Type Across Age Groups
+
+This bar chart visualizes the distribution of diet types across different age groups, using the new age_group variable created earlier. The chart reveals that among adults, Keto is the most popular diet type, while among senior citizens, Paleo dominates. For young individuals, Vegetarian is the most popular diet type. The legend shows the diet types, and the percentage labels indicate the proportion of each diet type within each age group.
+
+```{r}
+# Count the number of occurrences of each diet type by age group
+temp_diet_age <- DemographicHealthDataset %>%
+  count(age_group, diet_type)
+
+# Calculate percentage for each diet type within each age group
+temp_diet_age <- temp_diet_age %>%
+  mutate(perc = paste0(round(temp_diet_age$n/sum(temp_diet_age$n) * 100, 2), "%"))
+
+# Plotting the bar chart for the most popular diet type across age groups
+ggplot(temp_diet_age, aes(x = age_group, y = n, fill = diet_type)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Position the bars side by side
+  geom_text(aes(label = perc), position = position_dodge(width = 0.9), vjust = -0.25, color = "black") +  # Adding percentages
+  scale_fill_manual(values = c("lightblue", "pink", "orange", "lightgreen", "skyblue")) +  # colors for diet types
+  ggtitle("Most Popular Diet Type Across Age Groups") +
+  xlab("Age Group") +
+  ylab("Count of Individuals") +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+```
+
+### Most Popular Exercise Across Age Groups
+
+The bar chart below shows the distribution of exercise type by age group. It can be seen that Yoga is the most favourite among the young and adults, while Cardio also had a very strong participation in adults. In senior citizens, the majority had No Exercise, seconded by Yoga and Strength, respectively. The chart also includes labels showing the percentages of each type of exercise in each of the different age groups.
+
+```{r}
+# Count the number of occurrences of each exercise type by age group
+temp_exercise_age <- DemographicHealthDataset %>%
+  count(age_group, exercise_type)
+
+# Calculate percentage for each exercise type within each age group
+temp_exercise_age <- temp_exercise_age %>%
+  mutate(perc = paste0(round(temp_exercise_age$n / sum(temp_exercise_age$n) * 100, 2), "%"))
+
+# Plotting the bar chart for the most popular exercise type across age groups
+ggplot(temp_exercise_age, aes(x = age_group, y = n, fill = exercise_type)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Position the bars side by side
+  geom_text(aes(label = perc), position = position_dodge(width = 0.9), vjust = -0.25, color = "black") +  # Add percentages
+  scale_fill_brewer(palette = "Set3") + 
+  ggtitle("Most Popular Exercise Type Across Age Groups") +
+  xlab("Age Group") +
+  ylab("Count of Individuals") +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+```
+
+### Diet Category vs. BMI Category Distribution
+
+The chart shows the distribution of BMI by diet type. The non-plant-based diets have higher proportions in high and medium categories of BMI, while plant-based diets have a little more in the low category of BMI. This reflects that plant-based diets are associated with lower levels of BMI.
+
+```{r}
+# Group data by diet_category and BMI_percentile_category
+diet_bmi_distribution <- DemographicHealthDataset %>%
+  group_by(diet_category, BMI_percentile_category) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(percentage = round(count / sum(count) * 100, 2))
+
+# Plot the bar chart for BMI category distribution by diet category
+ggplot(diet_bmi_distribution, aes(x = BMI_percentile_category, y = count, fill = diet_category)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(aes(label = paste0(percentage, "%")), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5, 
+            size = 3) +
+  scale_fill_manual(values = c("Plant-Based" = "green", "Non-Plant-Based" = "blue")) +
+  ggtitle("Distribution of BMI Categories by Diet Category") +
+  xlab("BMI Category") +
+  ylab("Count of Individuals") +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+```
+
+### Diet Type and Age Group by BMI Percentile
+
+This facet-wrapped bar chart shows the distribution of age groups (young, adult, senior citizen) across BMI categories (Low, Medium, High) for different diet types (Keto, Paleo, Vegan, Vegetarian). Adults dominate all the categories of BMI throughout the diet types, especially in the High and Medium categories of BMI. Young individuals are more represented in Medium BMI, while senior citizens are the least represented. The chart shows how different the age group distributions are by diet and BMI.
+
+```{r}
+# Filter and group data for specific diet types
+diet_age_visualization <- DemographicHealthDataset %>%
+    filter(diet_type %in% c("Vegan", "Keto", "Vegetarian", "Paleo")) %>%
+    group_by(age_group, BMI_percentile_category)
+
+# Create facet-wrapped bar chart with age_group and BMI
+diet_age_visualization %>%
+    ggplot(mapping = aes(y = BMI_percentile_category, fill = age_group)) +
+    geom_bar(position = "dodge", stat = "count") +  # Dodge bars for comparison
+    facet_wrap(~ diet_type) +  # Facet by diet type
+    geom_text(stat = 'count', aes(label = ..count..), vjust = 1.4, 
+              position = position_dodge(width = 0.9)) +  # Adding labels to the bars
+    scale_fill_manual(values = c("#ffd700", "#aad6a5", "#87CEEB")) +  #colors for age groups
+    theme_minimal() +
+    ggtitle("Age Group Distribution by Diet Type and BMI Categories") +
+    xlab("BMI Categories") +
+    ylab("Count")
+```
+
+### **Exercise Type and Gender Distribution Across BMI Categories**
+
+This bar chart represents the distribution of various exercise types, both male and female, in relation to the BMI categories (High, Low, and Medium). Each panel displays a BMI category, and the bars within a specific panel count the number of people for each exercise type, segregated by gender. Yoga records the highest number of participants across all BMI categories. It is mainly done by females with high BMI. The exercises of Cardio and No Exercise have been selected by the two genders quite evenly. Pilates and Strength have slightly lower participation overall. The chart brings out different preferences for exercise based on gender and BMI. It also demonstrates how the activities differ according to the demographics of the population.
+
+```{r}
+# Consolidate Exercise Insights: Combine Exercise Type and Gender by BMI
+consolidated_exercise <- DemographicHealthDataset %>%
+    group_by(BMI_percentile_category, exercise_type, gender) %>%
+    summarise(count = n(), .groups = "drop")  # Count individuals for each combination
+
+# Create a facet-wrapped bar chart
+ggplot(consolidated_exercise, aes(x = exercise_type, y = count, fill = gender)) +
+    geom_bar(stat = "identity", position = "dodge") +  # Dodge bars for gender comparison
+    facet_wrap(~ BMI_percentile_category) +  # Separate panels by BMI category
+    geom_text(aes(label = count), 
+              position = position_dodge(width = 0.9), 
+              vjust = -0.5, 
+              size = 3) +  # Add labels for counts on the bars
+    scale_fill_manual(values = c("Male" = "skyblue", "Female" = "pink")) +  # Custom colors for genders
+    theme_minimal() +
+    ggtitle("Exercise Type and Gender Distribution Across BMI Categories") +
+    xlab("Exercise Type") +
+    ylab("Count") +
+    theme(legend.title = element_blank())
+```
+
+### Average BMI Trends by Age
+
+The chart demonstrates the average BMI trends at different ages. It shows that the BMI levels keep changing, with some obvious peaks and troughs. Younger and middle-aged groups appear more varied, perhaps because of the lifestyle or physical activity they engage in. At the ages of 30 and 40, BMI spires, thus showing the possibility of weight gain in these two periods. After the age of 50, BMI remains stable, thus indicating that a certain weight pattern is the case with the aged. This visual representation of BMI change over time and the identification of the main points for possible health interventions are the core elements of the chart.
+
+```{r}
+bmi_age <- DemographicHealthDataset %>%
+    group_by(age) %>%
+    summarise(avg_BMI = mean(BMI, na.rm = TRUE))
+
+ggplot(bmi_age, aes(x = age, y = avg_BMI)) +
+    geom_line(color = "blue") +
+    geom_point(color = "red", size = 2) +  # Add points to highlight each age
+    geom_text(aes(label = round(avg_BMI, 1)), vjust = -0.5, size = 3) +  # Add labels for average BMI
+    theme_minimal() +
+    ggtitle("Average BMI Trends by Age") +
+    xlab("Age") +
+    ylab("Average BMI")
+```
+
+### Weight vs Height by Gender and BMI
+
+The scatter plot is not only the visual representation of height and weight but also the association of these two variables categorized by gender and BMI levels. One point is a person whose color says BMI category (Low, Medium, or High) and shape shows gender (circle for females, triangle for males). The persons with a high BMI are clustered at higher weights, on the other hand, the latter category of BMI persons are grouped at the lower weight segment. BMI categories and gender are the specific issues in which the plot shows that the height-weight relationship is influenced.
+
+```{r}
+ggplot(DemographicHealthDataset, aes(x = height, y = weight, color = BMI_percentile_category, shape = gender)) +
+    geom_point(alpha = 0.7, size = 3) +  # Scatter points with transparency and size for visibility
+    geom_text(aes(label = round(weight, 1)), 
+              vjust = -1, 
+              size = 3, 
+              check_overlap = TRUE) +  # Add weight labels, avoiding overlapping
+    theme_minimal() +  # Apply a clean and simple theme
+    ggtitle("Height vs Weight by Gender and BMI") +  # Add a descriptive title
+    xlab("Height (cm)") +  # Label the x-axis for height
+    ylab("Weight (kg)") +  # Label the y-axis for weight
+    scale_color_manual(values = c("Low BMI" = "lightblue", 
+                                 "Medium BMI" = "orange", 
+                                 "High BMI" = "red")) +  # Assign distinct colors for BMI categories
+    theme(legend.title = element_blank())  # Remove legend title for simplicity
+```
+
+### Relationship Between Diet and Exercise Habits
+
+The bar chart shows the link between the types of diets and the habits of doing exercise. Yoga is the favorite sports type among most of those who are vegan (49) and get in the diet of Keto (46). Regular involvement and participation of Cardio and No Exercise are the patterns that Vegan followers prefer, and (52) them show a higher degree of inclination to No Exercise. As far as strength training is concerned, it has a minimal number of participants in every diet, especially among Vegetarians (24). The graph presents differences in the preferences of a person for a sport that are related to their diet and show that in most diet categories Yoga and Pilates in most diet categories.
+
+```{r}
+# Group data by diet_type and exercise_type to count individuals
+diet_exercise_relationship <- DemographicHealthDataset %>%
+    group_by(diet_type, exercise_type) %>%
+    summarise(count = n(), .groups = "drop")
+
+# Create a grouped bar chart
+ggplot(diet_exercise_relationship, aes(x = exercise_type, y = count, fill = diet_type)) +
+    geom_bar(stat = "identity", position = "dodge") + 
+    geom_text(aes(label = count), 
+              position = position_dodge(width = 0.9), 
+              vjust = -0.5, 
+              size = 3) +  # Adding labels for counts above bars
+    scale_fill_manual(values = c("Keto" = "skyblue", 
+                                 "Omnivore" = "lightgreen", 
+                                 "Paleo" = "orange", 
+                                 "Vegan" = "pink", 
+                                 "Vegetarian" = "salmon")) +  # colors for diet types
+    theme_minimal() +  # Apply a clean and simple theme
+    ggtitle("Relationship Between Diet and Exercise Habits") +  # Adding title
+    xlab("Exercise Type") +  # Label for x-axis
+    ylab("Count") +  # Label for y-axis
+    theme(legend.title = element_blank(),  # Remove legend title
+          axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+```
+
+### Trend Analysis of Exercise Frequency Over Age
+
+The line chart depicts the average levels of exercise in different age groups according to BMI (High, Medium, Low). Patients having a variable BMI of Low, Medium, and High, within the age range of 20-40 experience significantly deviant exercise patterns, Some of the low BMI people are engaging in very active exercises thus showing slightly better results. Outside the 40 age barrier, all the BMI groups experience physical activity regression which in the end comes as a steady lower level. The chart clearly shows the drop in exercise time with age and this could be due to the people not feeling like doing it any longer. Thus, older adults should be the main target for exercise programs.
+
+```{r}
+# Group data by age and BMI_percentile_category, calculating average exercise frequency
+exercise_age_trend <- DemographicHealthDataset %>%
+    group_by(age, BMI_percentile_category) %>%
+    summarise(avg_exercise_frequency = mean(exercise_frequency, na.rm = TRUE), .groups = "drop")
+
+# Create a line plot for the trend
+ggplot(exercise_age_trend, aes(x = age, y = avg_exercise_frequency, color = BMI_percentile_category)) +
+    geom_line(size = 1.2) +  # Add lines for each BMI category
+    geom_point(size = 2, alpha = 0.8) +  # Add points for each age
+    theme_minimal() +  # Apply a clean theme
+    ggtitle("Trend Analysis of Exercise Frequency Over Age by BMI Categories") +  # Add title
+    xlab("Age") +  # Label for x-axis
+    ylab("Average Exercise Frequency") +  # Label for y-axis
+    scale_color_manual(values = c("Low BMI" = "lightblue", 
+                                  "Medium BMI" = "purple", 
+                                  "High BMI" = "pink")) +  # Custom colors for BMI categories
+    theme(legend.title = element_blank(),  # Remove legend title
+          axis.text.x = element_text(angle = 45, hjust = 1))  # Rotate x-axis labels for readability
+```
+
+### Correlation Analysis and Relationships Between Health Metrics
+
+This correlation matrix provides a visual examination of the connections between weight, height, age, and BMI. The diagonal contains the histograms of each variable, which provides the information about the data distribution. The upper triangle part of the matrix displays the correlation coefficients, where the greater the values, the stronger the associations. For instance, there is a high positive correlation between weight and height which means that taller people are often heavier. On the other hand, BMI and height have a high negative correlation, meaning that taller people tend to have relatively low BMI. The lower triangle includes scatter plots accompanied by trend lines, which further reveal the relationships between the variables. In conclusion, this matrix shows the particular interactions between these health metrics.
+
+```{r}
+library(psych)
+library(ggplot2)
+library(scales)
+# Select relevant variables for analysis
+DemographicHealthDataset %>%
+  select(weight, height, age, BMI) %>%  # Select columns of interest
+  pairs.panels(
+    method = "pearson",         # Use Pearson correlation
+    hist.col = "#00AFBB",       # Color for histograms
+    density = TRUE,             # Add density plots
+    stars = TRUE,               # Show significance stars
+    ellipses = FALSE            # Disable confidence ellipses
+  )
+```
+
+### Gender-Based Heatmap for Health Metrics
+
+The heatmaps highlight correlations between health metrics for males and females. All of them exhibit an evident positive attachment between body mass index and height together with a negative one between BMI and height as well. In males, BMI has a more positive connection with age as opposed to females. In the female, exercise frequency slightly increases age. Therefore, these patterns ultimately show that there exist gender-specific differences in health metric interactions.
+
+```{r}
+# Separate datasets by gender
+male_data <- DemographicHealthDataset %>% filter(gender == "Male")
+female_data <- DemographicHealthDataset %>% filter(gender == "Female")
+
+# Compute correlations for each gender
+male_cor <- cor(male_data %>% select(weight, height, age, BMI, exercise_frequency), use = "complete.obs")
+female_cor <- cor(female_data %>% select(weight, height, age, BMI, exercise_frequency), use = "complete.obs")
+
+# Convert correlation matrices to long format
+male_cor_melt <- as.data.frame(as.table(male_cor))
+female_cor_melt <- as.data.frame(as.table(female_cor))
+
+# Plot heatmap for males
+male_heatmap <- ggplot(male_cor_melt, aes(x = Var1, y = Var2, fill = Freq)) +
+    geom_tile() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    ggtitle("Health Metrics Correlation Heatmap (Males)") +
+    xlab("Variables") +
+    ylab("Variables") +
+    theme_minimal()
+
+# Plot heatmap for females
+female_heatmap <- ggplot(female_cor_melt, aes(x = Var1, y = Var2, fill = Freq)) +
+    geom_tile() +
+    scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+    ggtitle("Health Metrics Correlation Heatmap (Females)") +
+    xlab("Variables") +
+    ylab("Variables") +
+    theme_minimal()
+
+# Display the heatmaps
+male_heatmap
+female_heatmap
+```
+
+## Conclusion
+
+The results from this analysis provide important insights into the connections between health parameters, diet preferences, exercise behaviors, and demographic characteristics:
+
+1.  Diet and Exercise Patterns: Regardless of the diet followed, yoga emerges as the most popular exercise, particularly among Vegan and Paleo diet followers, while strength training sees the least participation.
+
+2.  Body Mass Index (BMI) and Demographics: Over the past three years, adults have had the highest BMI representation, with medium and high BMI categories being the most prevalent. Young individuals, however, dominate the low BMI group. This variation suggests differences in lifestyle and metabolic factors across age groups.
+
+3.  Age and Activity: A decline in exercise frequency begins around age 40, highlighting a growing sedentary trend among middle-aged and older individuals. Targeted interventions for physical activity are necessary to address this issue and improve health outcomes in these populations.
+
+4.  Correlations Between BMI, Height, and Weight: BMI correlates negatively with height, indicating that taller individuals tend to have a lower BMI, while weight is positively associated with higher BMI levels, particularly in people engaging in less physical exercise.
+
+5.  Sex-Specific Trends: BMI varies significantly with age in males, whereas females show a positive relationship between exercise frequency and age. These differences point to the need for gender-specific wellness initiatives to maximize health benefits for each group.
+
+The insights from this analysis underscore the importance of designing health programs tailored to individual dietary preferences, exercise patterns, and demographic attributes. Developing personalized health and wellness interventions can significantly contribute to improved health outcomes and enhanced quality of life for diverse populations.
